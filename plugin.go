@@ -310,12 +310,23 @@ func (p *Plugin) Exec() error {
 				},
 			}
 
+			_, _, _, err := ssh.Run("ver", p.Config.CommandTimeout)
+			systemType := "unix"
+			if err == nil {
+				systemType = "windows"
+			}
+
+			_, _, _, err = ssh.Run("uname", p.Config.CommandTimeout)
+			if err == nil {
+				systemType = "unix"
+			}
+
 			// upload file to the tmp path
 			p.DestFile = fmt.Sprintf("%s%s", p.Config.TarTmpPath, p.DestFile)
 
 			// Call Scp method with file you want to upload to remote server.
 			p.log(host, "scp file to server.")
-			err := ssh.Scp(tar, p.DestFile)
+			err = ssh.Scp(tar, p.DestFile)
 
 			if err != nil {
 				errChannel <- copyError{host, err.Error()}
@@ -327,7 +338,16 @@ func (p *Plugin) Exec() error {
 				if p.Config.Remove {
 					p.log(host, "Remove target folder:", target)
 
-					_, _, _, err := ssh.Run(fmt.Sprintf("rm -rf %s", target), p.Config.CommandTimeout)
+					rmcmd := ""
+
+					switch systemType {
+					case "windows":
+						rmcmd = fmt.Sprintf("DEL /F /S %s", target)
+					case "unix":
+						rmcmd = fmt.Sprintf("rm -rf %s", target)
+					}
+
+					_, _, _, err := ssh.Run(rmcmd, p.Config.CommandTimeout)
 
 					if err != nil {
 						errChannel <- err
@@ -337,7 +357,16 @@ func (p *Plugin) Exec() error {
 
 				// mkdir path
 				p.log(host, "create folder", target)
-				_, errStr, _, err := ssh.Run(fmt.Sprintf("mkdir -p %s", target), p.Config.CommandTimeout)
+
+				mkdircmd := ""
+				switch systemType {
+				case "windows":
+					mkdircmd = fmt.Sprintf("if not exist %s mkdir %s", target, target)
+				case "unix":
+					mkdircmd = fmt.Sprintf("mkdir -p %s", target)
+				}
+
+				_, errStr, _, err := ssh.Run(mkdircmd, p.Config.CommandTimeout)
 				if err != nil {
 					errChannel <- err
 					return
